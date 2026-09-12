@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nextcloud-talk-agent"
+version = "0.1.0"
+description = "Standalone Python library to connect autonomous AI agents to Nextcloud Talk as service users"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "nextcloud-talk-agent contributors" }]
+keywords = ["nextcloud", "talk", "agent", "chatbot", "ai"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "httpx>=0.27",
+  "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "respx>=0.22",
+  "ruff>=0.6",
+]
+examples = [
+  "python-dotenv>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/nextcloud-talk-agent"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nextcloud_talk_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100

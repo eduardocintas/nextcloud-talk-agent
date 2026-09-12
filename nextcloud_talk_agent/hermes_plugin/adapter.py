@@ -279,7 +279,7 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
             "type": "group",
         }
 
-    async def send_typing(self, chat_id: str) -> None:
+    async def send_typing(self, chat_id: str, metadata: Optional[Dict[str, Any]] = None, **kwargs) -> None:
         """Signal that the agent is typing."""
         if self._client:
             try:

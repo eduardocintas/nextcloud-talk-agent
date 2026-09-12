@@ -43,6 +43,8 @@ def _get_scoped_secret(name: str, default: Optional[str] = None) -> Optional[str
 class NextcloudTalkAdapter(BasePlatformAdapter):
     """Hermes Native Gateway Adapter for Nextcloud Talk."""
 
+    supports_code_blocks: bool = True
+
     def __init__(self, config: Any, **kwargs: Any) -> None:
         platform = Platform("nextcloud_talk")
         super().__init__(config=config, platform=platform)
@@ -178,6 +180,18 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.error("Nextcloud Talk edit failed in room %s for msg %s: %s", chat_id, message_id, exc)
             return SendResult(success=False, error=str(exc))
+
+    async def delete_message(self, chat_id: str, message_id: str) -> bool:
+        """Delete a message in Nextcloud Talk (e.g. for progress cleanup)."""
+        if not self._client:
+            return False
+        try:
+            mid = int(message_id)
+            status = await self._client.delete_message(token=chat_id, message_id=mid)
+            return status in (200, 204)
+        except Exception as exc:
+            logger.debug("Nextcloud Talk delete_message failed for %s in %s: %s", message_id, chat_id, exc)
+            return False
 
     async def send_voice(
         self,

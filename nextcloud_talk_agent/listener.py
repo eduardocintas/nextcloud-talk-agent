@@ -51,6 +51,7 @@ class TalkListener:
         self._handlers: list[MessageHandler] = []
         self._last_known: dict[str, int] = {}
         self._seen_ids: dict[str, set[int]] = {}
+        self._room_tasks: dict[str, asyncio.Task] = {}
         self._running = False
 
     # -- handler registration -------------------------------------------
@@ -206,7 +207,11 @@ class TalkListener:
             while self._running:
                 try:
                     rooms = await self.client.get_rooms()
-                    current_tokens = {r.get("token", "") for r in rooms if r.get("token")}
+                    current_tokens = {
+                        (r.get("token") if isinstance(r, dict) else getattr(r, "token", ""))
+                        for r in rooms
+                    }
+                    current_tokens = {t for t in current_tokens if t}
                     for t in current_tokens:
                         if t not in self._room_tasks:
                             log.info("Discovered new Talk conversation: %s", t)

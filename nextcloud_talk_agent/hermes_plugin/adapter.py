@@ -26,6 +26,7 @@ from gateway.platforms.base import (
 )
 from nextcloud_talk_agent.client import TalkClient, TalkClientConfig
 from nextcloud_talk_agent.listener import ListenerConfig, TalkListener
+from nextcloud_talk_agent.media import MediaHelper
 from nextcloud_talk_agent.models import Message
 
 logger = logging.getLogger("hermes.platform.nextcloud_talk")
@@ -157,17 +158,71 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
             logger.error("Nextcloud Talk send failed to room %s: %s", chat_id, exc)
             return SendResult(success=False, error=str(exc))
 
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str,
+        content: str,
+        *,
+        finalize: bool = False,
+    ) -> SendResult:
+        """Edit a previously sent message in Nextcloud Talk."""
+        if not self._client:
+            return SendResult(success=False, error="Nextcloud Talk client is not connected")
+
+        try:
+            mid = int(message_id)
+            res = await self._client.edit_message(token=chat_id, message_id=mid, message=content)
+            new_id = str(res.get("id", message_id)) if isinstance(res, dict) else message_id
+            return SendResult(success=True, message_id=new_id)
+        except Exception as exc:
+            logger.error("Nextcloud Talk edit failed in room %s for msg %s: %s", chat_id, message_id, exc)
+            return SendResult(success=False, error=str(exc))
+
+    async def send_voice(
+        self,
+        chat_id: str,
+        audio_path: str,
+        caption: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> SendResult:
+        """Upload and send an audio file as a native voice message in Talk."""
+        if not self._client:
+            return SendResult(success=False, error="Nextcloud Talk client is not connected")
+
+        if not os.path.exists(audio_path):
+            logger.warning("[Nextcloud Talk] Audio file does not exist: %s", audio_path)
+            return SendResult(success=False, error="Audio file not found")
+
+        try:
+            helper = MediaHelper(self._client)
+            upload_res = await helper.send_voice_message(
+                local_audio=audio_path,
+                room_token=chat_id,
+                caption=caption or "",
+            )
+            msg_id = ""
+            if upload_res.message and isinstance(upload_res.message, dict):
+                msg_id = str(upload_res.message.get("id", ""))
+            return SendResult(success=True, message_id=msg_id)
+        except Exception as exc:
+            logger.error("[Nextcloud Talk] Failed to send voice message to %s: %s", chat_id, exc, exc_info=True)
+            return SendResult(success=False, error=str(exc))
+
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         """Get information about a chat/room (chat_id = room token)."""
         if self._client:
             try:
                 room = await self._client.get_room(chat_id)
-                name = room.name or chat_id
-                room_type = "dm" if room.type == 1 else "group"
+                name = room.get("name") if isinstance(room, dict) else getattr(room, "name", chat_id)
+                room_type_val = room.get("type") if isinstance(room, dict) else getattr(room, "type", 2)
+                room_type = "dm" if room_type_val == 1 else "group"
                 return {
-                    "name": name,
+                    "name": name or chat_id,
                     "type": room_type,
-                    "raw": room.raw,
+                    "raw": room,
                 }
             except Exception as exc:
                 logger.debug("Failed to get chat info for %s: %s", chat_id, exc)
@@ -189,9 +244,11 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
         sender_id = msg.actor_id or ""
         sender_name = msg.actor_display_name or sender_id
 
-        # Whitelist enforcement
-        if self._allowed_users_set and sender_id.lower() not in self._allowed_users_set:
-            logger.debug("Nextcloud Talk: ignoring message from unauthorized user %s", sender_id)
+        # Whitelist enforcement (matches full id, lowercase, or username part before @)
+        sender_lower = sender_id.lower()
+        sender_prefix = sender_lower.split("@")[0]
+        if self._allowed_users_set and sender_lower not in self._allowed_users_set and sender_prefix not in self._allowed_users_set:
+            logger.info("Nextcloud Talk: ignoring message from unauthorized user %s (allowed: %s)", sender_id, self._allowed_users_set)
             return
 
         chat_id = msg.token

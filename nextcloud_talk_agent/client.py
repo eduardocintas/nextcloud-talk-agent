@@ -256,6 +256,15 @@ class TalkClient:
         resp = await self._request("POST", f"{OCS_BASE}/chat/{token}", json=payload)
         return self._check_ocs(resp.json(), status=resp.status_code)
 
+    async def edit_message(self, token: str, message_id: int, message: str) -> dict[str, Any]:
+        """Edit an existing message: ``PUT .../chat/{token}/{message_id}``."""
+        resp = await self._request(
+            "PUT",
+            f"{OCS_BASE}/chat/{token}/{message_id}",
+            json={"message": message},
+        )
+        return self._check_ocs(resp.json(), status=resp.status_code)
+
     async def delete_message(self, token: str, message_id: int) -> int:
         resp = await self._request("DELETE", f"{OCS_BASE}/chat/{token}/{message_id}")
         return resp.status_code

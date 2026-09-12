@@ -165,6 +165,19 @@ async def test_webdav_put_and_mkcol():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_edit_message():
+    client = make_client()
+    route = respx.put(f"{BASE}/ocs/v2.php/apps/spreed/api/v1/chat/TOK/42").mock(
+        return_value=httpx.Response(200, json=ocs({"id": 42, "message": "edited"}))
+    )
+    res = await client.edit_message("TOK", 42, "edited")
+    assert res["id"] == 42
+    assert route.calls[0].request.headers["OCS-APIRequest"] == "true"
+    await client.aclose()
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_ocs_error_raises():
     client = make_client()
     respx.get(f"{BASE}/ocs/v2.php/apps/spreed/api/v4/room").mock(
@@ -173,3 +186,4 @@ async def test_ocs_error_raises():
     with pytest.raises(TalkApiError):
         await client.get_rooms()
     await client.aclose()
+

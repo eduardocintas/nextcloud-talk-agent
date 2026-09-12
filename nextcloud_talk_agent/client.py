@@ -265,6 +265,24 @@ class TalkClient:
         )
         return self._check_ocs(resp.json(), status=resp.status_code)
 
+    async def add_reaction(self, token: str, message_id: int, reaction: str) -> dict[str, Any]:
+        """Add an emoji reaction to a message: ``POST .../reaction/{token}/{message_id}``."""
+        resp = await self._request(
+            "POST",
+            f"{OCS_BASE}/reaction/{token}/{message_id}",
+            json={"reaction": reaction},
+        )
+        return self._check_ocs(resp.json(), status=resp.status_code)
+
+    async def remove_reaction(self, token: str, message_id: int, reaction: str) -> dict[str, Any]:
+        """Remove an emoji reaction from a message: ``DELETE .../reaction/{token}/{message_id}``."""
+        resp = await self._request(
+            "DELETE",
+            f"{OCS_BASE}/reaction/{token}/{message_id}",
+            json={"reaction": reaction},
+        )
+        return self._check_ocs(resp.json(), status=resp.status_code)
+
     async def delete_message(self, token: str, message_id: int) -> int:
         resp = await self._request("DELETE", f"{OCS_BASE}/chat/{token}/{message_id}")
         return resp.status_code

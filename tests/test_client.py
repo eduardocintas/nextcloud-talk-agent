@@ -178,12 +178,26 @@ async def test_edit_message():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_ocs_error_raises():
+async def test_add_reaction():
     client = make_client()
-    respx.get(f"{BASE}/ocs/v2.php/apps/spreed/api/v4/room").mock(
-        return_value=httpx.Response(200, json=ocs([], statuscode="404"))
+    route = respx.post(f"{BASE}/ocs/v2.php/apps/spreed/api/v1/reaction/TOK/42").mock(
+        return_value=httpx.Response(200, json=ocs({"reaction": "👀"}))
     )
-    with pytest.raises(TalkApiError):
-        await client.get_rooms()
+    res = await client.add_reaction("TOK", 42, "👀")
+    assert res["reaction"] == "👀"
+    assert route.calls[0].request.headers["OCS-APIRequest"] == "true"
+    await client.aclose()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_remove_reaction():
+    client = make_client()
+    route = respx.delete(f"{BASE}/ocs/v2.php/apps/spreed/api/v1/reaction/TOK/42").mock(
+        return_value=httpx.Response(200, json=ocs({"reaction": "👀"}))
+    )
+    res = await client.remove_reaction("TOK", 42, "👀")
+    assert res["reaction"] == "👀"
+    assert route.calls[0].request.headers["OCS-APIRequest"] == "true"
     await client.aclose()
 

@@ -44,6 +44,9 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
     """Hermes Native Gateway Adapter for Nextcloud Talk."""
 
     supports_code_blocks: bool = True
+    _ACK_EMOJI: str = "👀"
+    _OK_EMOJI: str = "✅"
+    _FAIL_EMOJI: str = "❌"
 
     def __init__(self, config: Any, **kwargs: Any) -> None:
         platform = Platform("nextcloud_talk")
@@ -192,6 +195,37 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.debug("Nextcloud Talk delete_message failed for %s in %s: %s", message_id, chat_id, exc)
             return False
+
+    async def _add_reaction(self, chat_id: str, message_id: str, emoji: str) -> bool:
+        if not self._client:
+            return False
+        try:
+            mid = int(message_id)
+            await self._client.add_reaction(token=chat_id, message_id=mid, reaction=emoji)
+            return True
+        except Exception as exc:
+            logger.debug("Nextcloud Talk add_reaction failed for %s on %s: %s", emoji, message_id, exc)
+            return False
+
+    async def _remove_reaction(self, chat_id: str, message_id: str, emoji: Optional[str] = None) -> bool:
+        if not self._client:
+            return False
+        try:
+            mid = int(message_id)
+            # Default to removing _ACK_EMOJI if none specified
+            rem_emoji = emoji or self._ACK_EMOJI
+            await self._client.remove_reaction(token=chat_id, message_id=mid, reaction=rem_emoji)
+            return True
+        except Exception as exc:
+            logger.debug("Nextcloud Talk remove_reaction failed for %s on %s: %s", emoji, message_id, exc)
+            return False
+
+    async def on_processing_start(self, event: MessageEvent) -> None:
+        """Add 👀 reaction immediately upon receiving user message."""
+        chat_id = getattr(event.source, "chat_id", None)
+        message_id = getattr(event, "message_id", None)
+        if chat_id and message_id and self._ACK_EMOJI:
+            await self._add_reaction(chat_id, message_id, self._ACK_EMOJI)
 
     async def send_voice(
         self,

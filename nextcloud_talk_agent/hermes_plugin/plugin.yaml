@@ -1,0 +1,9 @@
+name: nextcloud_talk
+version: 0.1.0
+description: Nextcloud Talk messaging platform adapter for Hermes Agent
+author: eduardocintas
+kind: platform
+requires_env:
+  - NEXTCLOUD_URL
+  - NEXTCLOUD_TALK_USER
+  - NEXTCLOUD_TALK_PASSWORD

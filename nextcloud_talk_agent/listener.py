@@ -160,25 +160,75 @@ class TalkListener:
                 failures += 1
                 await asyncio.sleep(self._backoff(failures))
 
+    @property
+    def active_room_tokens(self) -> set[str]:
+        return set(self._room_tasks.keys())
+
+    async def add_room(self, token: str, *, bootstrap: bool = True) -> None:
+        if token in self._room_tasks:
+            return
+        if bootstrap:
+            await self.bootstrap([token])
+        task = asyncio.create_task(self._room_loop(token), name=f"talk-poll-{token}")
+        self._room_tasks[token] = task
+
+    async def remove_room(self, token: str) -> None:
+        task = self._room_tasks.pop(token, None)
+        if task and not task.done():
+            task.cancel()
+
     async def listen_forever(self, tokens: list[str], *, bootstrap: bool = True) -> None:
         """Poll all ``tokens`` concurrently until :meth:`stop` is called."""
-        if bootstrap:
-            await self.bootstrap(tokens)
         self._running = True
-        tasks = [asyncio.create_task(self._room_loop(t), name=f"talk-poll-{t}") for t in tokens]
+        self._room_tasks = {}
+        for t in tokens:
+            await self.add_room(t, bootstrap=bootstrap)
         try:
-            await asyncio.gather(*tasks)
+            while self._running:
+                # Clean up done tasks and sleep briefly
+                done = [t for t, task in self._room_tasks.items() if task.done()]
+                for t in done:
+                    del self._room_tasks[t]
+                await asyncio.sleep(1.0)
         finally:
             self._running = False
-            for task in tasks:
+            for task in list(self._room_tasks.values()):
                 if not task.done():
                     task.cancel()
+            self._room_tasks.clear()
 
-    async def listen_all_rooms(self) -> None:
-        """Resolve rooms via API and listen on every conversation."""
-        rooms = await self.client.get_rooms()
-        tokens = [r.get("token", "") for r in rooms if r.get("token")]
-        await self.listen_forever(tokens)
+    async def listen_all_rooms(self, *, room_sync_interval: float = 15.0) -> None:
+        """Resolve rooms via API and continuously discover new conversations."""
+        self._running = True
+        self._room_tasks = {}
+
+        async def _room_sync_loop() -> None:
+            while self._running:
+                try:
+                    rooms = await self.client.get_rooms()
+                    current_tokens = {r.get("token", "") for r in rooms if r.get("token")}
+                    for t in current_tokens:
+                        if t not in self._room_tasks:
+                            log.info("Discovered new Talk conversation: %s", t)
+                            await self.add_room(t, bootstrap=True)
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    log.warning("Dynamic room sync error: %s", exc)
+                await asyncio.sleep(room_sync_interval)
+
+        sync_task = asyncio.create_task(_room_sync_loop(), name="talk-room-sync")
+        try:
+            while self._running:
+                await asyncio.sleep(0.05)
+        finally:
+            self._running = False
+            sync_task.cancel()
+            for task in list(self._room_tasks.values()):
+                if not task.done():
+                    task.cancel()
+            self._room_tasks.clear()
 
     def stop(self) -> None:
         self._running = False
+

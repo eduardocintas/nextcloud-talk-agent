@@ -85,6 +85,7 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
         self._client: Optional[TalkClient] = None
         self._listener: Optional[TalkListener] = None
         self._listen_task: Optional[asyncio.Task] = None
+        self._pending_placeholders: dict[str, str] = {}  # chat_id -> placeholder_message_id
 
     @property
     def name(self) -> str:
@@ -146,9 +147,22 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a message to a Nextcloud Talk room (chat_id = token)."""
+        """Send a message to a Nextcloud Talk room (chat_id = token).
+
+        If an initial typing placeholder exists for this chat, edit it with the final response.
+        """
         if not self._client:
             return SendResult(success=False, error="Nextcloud Talk client is not connected")
+
+        placeholder_id = self._pending_placeholders.pop(chat_id, None)
+        if placeholder_id:
+            try:
+                mid = int(placeholder_id)
+                res = await self._client.edit_message(token=chat_id, message_id=mid, message=content)
+                new_id = str(res.get("id", placeholder_id)) if isinstance(res, dict) else placeholder_id
+                return SendResult(success=True, message_id=new_id)
+            except Exception as exc:
+                logger.debug("Nextcloud Talk failed to edit typing placeholder %s in %s: %s; falling back to send", placeholder_id, chat_id, exc)
 
         try:
             reply_to_id = int(reply_to) if reply_to and reply_to.isdigit() else None
@@ -221,11 +235,24 @@ class NextcloudTalkAdapter(BasePlatformAdapter):
             return False
 
     async def on_processing_start(self, event: MessageEvent) -> None:
-        """Add 👀 reaction immediately upon receiving user message."""
+        """Add 👀 reaction and post editable typing placeholder immediately upon receiving message."""
         chat_id = getattr(event.source, "chat_id", None)
         message_id = getattr(event, "message_id", None)
         if chat_id and message_id and self._ACK_EMOJI:
             await self._add_reaction(chat_id, message_id, self._ACK_EMOJI)
+
+        if chat_id and self._client:
+            try:
+                # Post initial placeholder that will later be replaced by the final response
+                res = await self._client.send_message(
+                    token=chat_id,
+                    message="💭 *Escribiendo...*",
+                    reply_to=int(message_id) if message_id and str(message_id).isdigit() else None,
+                )
+                if isinstance(res, dict) and "id" in res:
+                    self._pending_placeholders[chat_id] = str(res["id"])
+            except Exception as exc:
+                logger.debug("Nextcloud Talk failed to post initial typing placeholder to %s: %s", chat_id, exc)
 
     async def send_voice(
         self,
